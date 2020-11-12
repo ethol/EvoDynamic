@@ -18,3 +18,10 @@ def pop_all_lists(list_of_lists):
     for i in range(0, len(list_of_lists)):
         firsts.append(list_of_lists[i].pop(0))
     return firsts
+
+
+def flatten_list_of_lists(lists):
+    flat_list = []
+    for sublist in lists:
+        flat_list.extend(sublist)
+    return flat_list
