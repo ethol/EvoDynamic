@@ -11,10 +11,11 @@ import evodynamic.cells.activation as act
 import evodynamic.cells as cells
 from sklearn.linear_model import LinearRegression
 from sklearn.svm import SVC
+import helpers.math_helper as math_helper
 
 runtime = []
 score = []
-for expRun in range(0, 100):
+for expRun in range(0, 1):
     start_time = time.time()
     reg = SVC(kernel="linear")
     x_training = []
@@ -23,6 +24,7 @@ for expRun in range(0, 100):
     exp_memory_history = []
 
     number_of_reservoirs = 8
+    number_of_bits = 5
     reservoir_width = 40
     iterations_between_input = 4
     historyMemory = iterations_between_input
@@ -45,11 +47,7 @@ for expRun in range(0, 100):
 
     #math for 32
     for bits in range(0, 32):
-
-        binArray = list(str(int(bin(bits)[2:])))
-        binArray = list(map(int, binArray))
-        input_array = np.zeros(5, dtype=int)
-        input_array[-len(binArray):] = binArray
+        input_array = math_helper.int_to_binary_string(bits, number_of_bits)
         # print(input_array)
 
         # input_locations = np.random.randint(resovoir_width, size=number_of_resovoirs*4)
