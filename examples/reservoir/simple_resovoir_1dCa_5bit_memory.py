@@ -23,10 +23,10 @@ for expRun in range(0, 1):
     exp_history = []
     exp_memory_history = []
 
-    number_of_reservoirs = 8
+    number_of_reservoirs = 4
     number_of_bits = 5
     reservoir_width = 40
-    iterations_between_input = 4
+    iterations_between_input = 2
     historyMemory = iterations_between_input
     input_channels = 4
     input_array = [0, 0, 0, 0, 0]
@@ -35,10 +35,10 @@ for expRun in range(0, 1):
     distractor_period_input_output = (distractor_period + 2 * len(input_array))
 
     width = number_of_reservoirs * reservoir_width
-    height_fig = distractor_period_input_output * (iterations_between_input + 1)
+    height_fig = distractor_period_input_output * iterations_between_input
     timesteps = height_fig
 
-    fargs_list = [(a,) for a in [30]]
+    fargs_list = [(a,) for a in [0]]
 
     input_true_locations = []
     for i in range(number_of_reservoirs):
@@ -54,35 +54,22 @@ for expRun in range(0, 1):
 
         input_streams = []
 
-        input_no_infix = np.zeros(-(-timesteps // iterations_between_input), dtype=int)
-        input_no_infix[:len(input_array)] = input_array
+        input_stream = np.zeros(distractor_period_input_output, dtype=int)
+        input_stream[:len(input_array)] = input_array
+        input_streams.append(input_stream.tolist())
 
-        input_stream = np.zeros(timesteps, dtype=int)
-        input_stream[::iterations_between_input] = input_no_infix
+        input_stream = np.zeros(distractor_period_input_output, dtype=int)
+        input_stream[:len(input_array)] = np.bitwise_xor(input_array, 1)
+        input_streams.append(input_stream.tolist())
 
-        input_streams.append(input_stream)
+        input_stream = np.ones(distractor_period_input_output, dtype=int)
+        input_stream[:len(input_array)] = np.zeros(5)
+        input_stream[distractor_period_input_output - len(input_array) - 1] = 0
+        input_streams.append(input_stream.tolist())
 
-        input_no_infix = np.zeros(-(-timesteps // iterations_between_input), dtype=int)
-        input_no_infix[:len(input_array)] = np.bitwise_xor(input_array, 1)
-
-        input_stream = np.zeros(timesteps, dtype=int)
-        input_stream[::iterations_between_input] = input_no_infix
-
-        input_streams.append(input_stream)
-
-        input_no_infix = np.ones(-(-timesteps // iterations_between_input), dtype=int)
-        input_no_infix[:len(input_array)] = np.zeros(5)
-
-        input_stream = np.zeros(timesteps, dtype=int)
-        input_stream[::iterations_between_input] = input_no_infix
-        input_stream[timesteps - ((iterations_between_input + 1) * len(input_array)) - 1] = 0
-
-        input_streams.append(input_stream)
-
-        input_stream = np.zeros(timesteps, dtype=int)
-        input_stream[timesteps - ((iterations_between_input + 1) * len(input_array)) - 1] = 1
-
-        input_streams.append(input_stream)
+        input_stream = np.zeros(distractor_period_input_output, dtype=int)
+        input_stream[distractor_period_input_output - len(input_array) - 1] = 1
+        input_streams.append(input_stream.tolist())
 
         output_streams_correct = []
 
@@ -136,23 +123,22 @@ for expRun in range(0, 1):
         for i in range(0, timesteps):
             g_ca_bin_current = exp.get_group_cells_state("g_ca", "g_ca_bin")
             step = g_ca_bin_current[:, 0]
-            for j in range(len(input_true_locations)):
-                step[input_true_locations[j]] = float(int(step[input_true_locations[j]]) ^ input_streams[j % 4][i])
+            if i % iterations_between_input == 0:
+                input_bits = math_helper.pop_all_lists(input_streams)
+                for j in range(len(input_true_locations)):
+                    input_bit = input_bits[j % 4]
+                    step[input_true_locations[j]] = float(int(step[input_true_locations[j]]) ^ input_bit)
 
             shortTermHistory.append(step)
             shortTermHistory = shortTermHistory[-historyMemory:]
 
-            if i % (iterations_between_input + 1) == 0:
-                correct_answer = np.ones(3, dtype=int)
-                correct_answer[0] = output_streams_correct[0].pop(0)
-                correct_answer[1] = output_streams_correct[1].pop(0)
-                correct_answer[2] = output_streams_correct[2].pop(0)
+            if i % iterations_between_input == 0:
+                correct_answer = math_helper.pop_all_lists(output_streams_correct)
 
                 flat_list = []
                 for sublist in shortTermHistory:
                     for item in sublist:
                         flat_list.append(item)
-                # reg.fit([flat_list], [correct_answer])
                 x_training.append(flat_list)
                 if correct_answer[0] == 1:
                     x_labels.append(0)
@@ -165,8 +151,8 @@ for expRun in range(0, 1):
                 run_ca[i] = step
             else:
                 run_ca = np.vstack((run_ca[1:], step))
-            # exp_history.append(run_ca.copy())
-            # exp_memory_history.append(shortTermHistory.copy())
+            exp_history.append(run_ca.copy())
+            exp_memory_history.append(shortTermHistory.copy())
 
             exp.run_step(feed_dict={input_connection: step.reshape((-1, 1))})
 
@@ -184,7 +170,7 @@ for expRun in range(0, 1):
     print(this_score)
     print(str(this_runtime) + " seconds")
 
-    exp.close()
+    # exp.close()
 
 
 print(score)
@@ -193,77 +179,77 @@ print(runtime)
 print(sum(map(lambda i: i == 1.0, score)))
 
 #
-# def updatefig(*args):
-#     global idx_anim
-#     im.set_array(exp_history[idx_anim])
-#     im2.set_array(exp_memory_history[idx_anim])
-#     if idx_anim % (iterations_between_input + 1) == 0:
-#         pred = reg.predict([x_training[idx_anim // (iterations_between_input + 1)]])
-#         # print(pred)
-#         # print(x_labels[200])
-#         if pred == 0:
-#             im3.set_array([[1, 0, 0]])
-#         elif pred == 1:
-#             im3.set_array([[0, 1, 0]])
-#         else:
-#             im3.set_array([[0, 0, 1]])
-#         # im3.set_array([list(map(round, pred[0]))])
-#         ax3.set_title("model prediction: " + str(pred))
-#         cor = x_labels[idx_anim // (iterations_between_input + 1)]
-#         if cor == 0:
-#             im4.set_array([[1, 0, 0]])
-#         elif cor == 1:
-#             im4.set_array([[0, 1, 0]])
-#         else:
-#             im4.set_array([[0, 0, 1]])
-#         # im4.set_array([x_labels[idx_anim // (iterations_between_input + 1)]])
-#     fig.suptitle('Step: ' + str(idx_anim % timesteps) + " Exp: " + str(idx_anim // timesteps))
-#     idx_anim += 1
-#
-#
-# # Animation
-# import matplotlib.pyplot as plt
-# import matplotlib.gridspec as gridspec
-# import matplotlib.animation as animation
-#
-# fig = plt.figure()
-# gs = fig.add_gridspec(4, 8)
-# ax1 = fig.add_subplot(gs[:-1, :-1])
-# ax1.set_title("reservoir full history")
-# ax2 = fig.add_subplot(gs[3, :-1])
-# ax2.set_title("model perceived history")
-# ax3 = fig.add_subplot(gs[:-2, 7])
-# ax3.set_title("model prediction")
-# ax3.axis("off")
-# ax4 = fig.add_subplot(gs[2:, 7])
-# ax4.set_title("model desired output")
-# ax4.axis("off")
-#
-# im_ca = np.zeros((height_fig, width))
-#
-# shortTermHistory = np.zeros((historyMemory, width), dtype=int).tolist()
-#
-# im = ax1.imshow(im_ca, animated=True, vmax=1)
-# im2 = ax2.imshow(shortTermHistory, animated=True, vmax=1)
-# im3 = ax3.imshow(np.zeros((1, 3), dtype=int).tolist(), animated=True, vmax=1)
-# im4 = ax4.imshow(np.zeros((1, 3), dtype=int).tolist(), animated=True, vmax=1)
-#
-# fig.suptitle('Step: 0 Exp: 0')
-#
-# print(input_true_locations)
-#
-# # implement as list of arrays instead?
-#
-# idx_anim = 0
-# ani = animation.FuncAnimation(
-#     fig,
-#     updatefig,
-#     frames=(timesteps - 1) * 32,
-#     interval=200,
-#     blit=False,
-#     repeat=False
-# )
-#
-# plt.show()
-#
-# plt.connect('close_event', exp.close())
+def updatefig(*args):
+    global idx_anim
+    im.set_array(exp_history[idx_anim])
+    im2.set_array(exp_memory_history[idx_anim])
+    if idx_anim % iterations_between_input == 0:
+        pred = reg.predict([x_training[idx_anim // iterations_between_input]])
+        # print(pred)
+        # print(x_labels[200])
+        if pred == 0:
+            im3.set_array([[1, 0, 0]])
+        elif pred == 1:
+            im3.set_array([[0, 1, 0]])
+        else:
+            im3.set_array([[0, 0, 1]])
+        # im3.set_array([list(map(round, pred[0]))])
+        ax3.set_title("model prediction: " + str(pred))
+        cor = x_labels[idx_anim // iterations_between_input]
+        if cor == 0:
+            im4.set_array([[1, 0, 0]])
+        elif cor == 1:
+            im4.set_array([[0, 1, 0]])
+        else:
+            im4.set_array([[0, 0, 1]])
+        # im4.set_array([x_labels[idx_anim // (iterations_between_input + 1)]])
+    fig.suptitle('Step: ' + str(idx_anim % timesteps) + " Exp: " + str(idx_anim // timesteps))
+    idx_anim += 1
+
+
+# Animation
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+import matplotlib.animation as animation
+
+fig = plt.figure()
+gs = fig.add_gridspec(4, 8)
+ax1 = fig.add_subplot(gs[:-1, :-1])
+ax1.set_title("reservoir full history")
+ax2 = fig.add_subplot(gs[3, :-1])
+ax2.set_title("model perceived history")
+ax3 = fig.add_subplot(gs[:-2, 7])
+ax3.set_title("model prediction")
+ax3.axis("off")
+ax4 = fig.add_subplot(gs[2:, 7])
+ax4.set_title("model desired output")
+ax4.axis("off")
+
+im_ca = np.zeros((height_fig, width))
+
+shortTermHistory = np.zeros((historyMemory, width), dtype=int).tolist()
+
+im = ax1.imshow(im_ca, animated=True, vmax=1)
+im2 = ax2.imshow(shortTermHistory, animated=True, vmax=1)
+im3 = ax3.imshow(np.zeros((1, 3), dtype=int).tolist(), animated=True, vmax=1)
+im4 = ax4.imshow(np.zeros((1, 3), dtype=int).tolist(), animated=True, vmax=1)
+
+fig.suptitle('Step: 0 Exp: 0')
+
+print(input_true_locations)
+
+# implement as list of arrays instead?
+
+idx_anim = 0
+ani = animation.FuncAnimation(
+    fig,
+    updatefig,
+    frames=(timesteps - 1) * 32,
+    interval=200,
+    blit=False,
+    repeat=False
+)
+
+plt.show()
+
+plt.connect('close_event', exp.close())

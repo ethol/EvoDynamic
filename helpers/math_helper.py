@@ -11,3 +11,10 @@ def left_pad_array(arr, size):
     array = np.zeros(size, dtype=int)
     array[-len(arr):] = arr
     return array
+
+
+def pop_all_lists(list_of_lists):
+    firsts = []
+    for i in range(0, len(list_of_lists)):
+        firsts.append(list_of_lists[i].pop(0))
+    return firsts
