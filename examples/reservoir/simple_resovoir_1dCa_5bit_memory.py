@@ -2,11 +2,12 @@ import tensorflow as tf
 import numpy as np
 import random
 import time
+from datetime import datetime
 import evodynamic.experiment as experiment
 import evodynamic.connection.cellular_automata as ca
 import evodynamic.connection as connection
 import evodynamic.cells.activation as act
-from sklearn.linear_model import LinearRegression
+# from sklearn.linear_model import LinearRegression
 from sklearn.svm import SVC
 import helpers.helper as helper
 
@@ -15,7 +16,7 @@ class ReservoirMemorySingleExperiment:
     def __init__(self, bits, r, itr, r_width, d_period, ca_rule):
 
         self.recurrence = r
-        self.iterations_between_input = itr
+        self.iterations_between_input = itr + 1
         self.reservoir_height = itr
         self.recurrence_width = r_width
         self.distractor_period = d_period
@@ -29,14 +30,16 @@ class ReservoirMemorySingleExperiment:
         self.ca_width = self.recurrence * self.recurrence_width
 
         self.input_true_locations = self.create_input_locations()
-        evo = self.set_up_evodynamics()
-        self.evo_exp = evo[0]
-        self.input_connections = evo[1]
+        # evo = self.set_up_evodynamics()
+        # self.evo_exp = evo[0]
+        # self.input_connections = evo[1]
 
         self.x_training = []
         self.x_labels = []
         self.exp_history = []
         self.exp_memory_history = []
+        self.correct_predictions = 0
+        self.attempted_predictions = 0
 
     def create_input_locations(self):
         input_true_locations = []
@@ -58,7 +61,7 @@ class ReservoirMemorySingleExperiment:
         input_streams.append(input_stream.tolist())
 
         input_stream = np.ones(self.distractor_period_input_output, dtype=int)
-        input_stream[:len(input_array)] = np.zeros(5)
+        input_stream[:len(input_array)] = np.zeros(self.number_of_bits)
         input_stream[self.distractor_period_input_output - len(input_array) - 1] = 0
         input_streams.append(input_stream.tolist())
 
@@ -80,7 +83,7 @@ class ReservoirMemorySingleExperiment:
         output_streams.append(output_stream.tolist())
 
         output_stream = np.ones(self.distractor_period_input_output, dtype=int)
-        output_stream[-len(input_array):] = np.zeros(5)
+        output_stream[-len(input_array):] = np.zeros(self.number_of_bits)
         output_streams.append(output_stream.tolist())
 
         return output_streams
@@ -88,7 +91,7 @@ class ReservoirMemorySingleExperiment:
     def set_up_evodynamics(self):
         fargs_list = [(a,) for a in [self.ca_rule]]
 
-        exp = experiment.Experiment(input_start=0, input_delay=0, training_delay=5)
+        exp = experiment.Experiment(input_start=0, input_delay=self.reservoir_height, training_delay=5)
         g_ca = exp.add_group_cells(name="g_ca", amount=self.ca_width)
         neighbors, center_idx = ca.create_pattern_neighbors_ca1d(3)
         g_ca_bin = g_ca.add_binary_state(state_name='g_ca_bin', init="zeros")
@@ -119,22 +122,29 @@ class ReservoirMemorySingleExperiment:
         # exp.add_monitor("g_ca", "g_ca_bin")
 
         exp.initialize_cells()
+        # assign to self rather then return touple
         return exp, input_connection
 
-    def run(self):
-        for bits in range(0, 32):
+    def run(self, evaluate=False):
+        for bits in range(0, pow(2, self.number_of_bits)):
+            # self.input_true_locations = self.create_input_locations()
+            evo = self.set_up_evodynamics()
+            self.evo_exp = evo[0]
+            self.input_connections = evo[1]
+
             input_array = helper.int_to_binary_string(bits, self.number_of_bits)
-            self.run_bit_string(input_array)
+            self.run_bit_string(input_array, evaluate)
+            self.evo_exp.close()
 
-        self.reg.fit(self.x_training, self.x_labels)
-
-        this_score = self.reg.score(self.x_training, self.x_labels)
-
-        self.evo_exp.close()
+        if not evaluate:
+            self.reg.fit(self.x_training, self.x_labels)
+            this_score = self.reg.score(self.x_training, self.x_labels)
+        else:
+            this_score = self.correct_predictions / self.attempted_predictions
 
         return this_score
 
-    def run_bit_string(self, input_array):
+    def run_bit_string(self, input_array, evaluate):
         short_term_history = np.zeros((self.reservoir_height, self.ca_width), dtype=int).tolist()
         run_ca = np.zeros((self.ca_height, self.ca_width))
 
@@ -142,9 +152,9 @@ class ReservoirMemorySingleExperiment:
         output_streams_labels = self.create_output_streams(input_array)
 
         for i in range(0, self.ca_height):
-            self.run_step(i, input_streams, output_streams_labels, short_term_history, run_ca)
+            self.run_step(i, input_streams, output_streams_labels, short_term_history, run_ca, evaluate)
 
-    def run_step(self, i, input_streams, output_streams_labels, short_term_history, run_ca):
+    def run_step(self, i, input_streams, output_streams_labels, short_term_history, run_ca, evaluate):
         g_ca_bin_current = self.evo_exp.get_group_cells_state("g_ca", "g_ca_bin")
         step = g_ca_bin_current[:, 0]
 
@@ -159,15 +169,22 @@ class ReservoirMemorySingleExperiment:
 
         if i % self.iterations_between_input == 0:
             correct_answer = helper.pop_all_lists(output_streams_labels)
-
-            self.x_training.append(helper.flatten_list_of_lists(short_term_history))
-
+            reservoir_flattened_state = helper.flatten_list_of_lists(short_term_history)
             if correct_answer[0] == 1:
-                self.x_labels.append(0)
+                correct_answer_class = 0
             elif correct_answer[1] == 1:
-                self.x_labels.append(1)
+                correct_answer_class = 1
             else:
-                self.x_labels.append(2)
+                correct_answer_class = 2
+
+            if not evaluate:
+                self.x_training.append(reservoir_flattened_state)
+                self.x_labels.append(correct_answer_class)
+            else:
+                predicted_class = self.reg.predict([reservoir_flattened_state])
+                self.attempted_predictions += 1
+                if predicted_class[0] == correct_answer_class:
+                    self.correct_predictions += 1
 
         if i < self.ca_height:
             run_ca[i] = step
@@ -256,19 +273,55 @@ class ReservoirMemorySingleExperiment:
         # plt.connect('close_event', self.exp.close())
 
 
-start_time = time.time()
-scores = []
-for expRun in range(0, 100):
-    print("starting exp nr" + str(expRun))
-    start_time_sub = time.time()
-    exp = ReservoirMemorySingleExperiment(bits=5, r=4, itr=2, r_width=40, d_period=200, ca_rule=90)
-    score = exp.run()
-    # exp.show_visuals()
+def recordingExp(bits, r_width, d_period, ca_rule, runs, r, itr):
+    filename = f'exp {datetime.now().isoformat().replace(":", " ")}.txt'
+    file = open(filename, "a")
+    file.writelines(
+        f'r={r}, itr={itr}, r width={r_width}, distractor period={d_period}, CA rule={ca_rule}, number of runs={runs}, started at: {datetime.now().isoformat()}')
+    file.writelines("\nscore")
+    file.close()
 
-    print(score)
-    scores.append(score)
-    this_runtime = time.time() - start_time_sub
-    print(this_runtime)
+    start_time = time.time()
+    scores = []
+    for expRun in range(0, runs):
+        print("starting exp nr" + str(expRun))
+        start_time_sub = time.time()
+        exp = ReservoirMemorySingleExperiment(bits=bits, r=r, itr=itr, r_width=r_width, d_period=d_period,
+                                              ca_rule=ca_rule)
+        score = exp.run()
+        # scoreEval = exp.run(True)
+        # exp.show_visuals()
+        file = open(filename, "a")
+        file.write("\n" + str(score) + "\t" + str(exp.input_true_locations))
+        # file.write("\n" + str(score) + "\t" + str(exp.input_true_locations) + "\t" + str(scoreEval))
+        file.close()
+        print(score)
+        scores.append(score)
+        this_runtime = time.time() - start_time_sub
+        print(this_runtime)
 
-print(time.time() - start_time)
-print(sum(map(lambda i: i == 1.0, scores)))
+    print(time.time() - start_time)
+    number_of_successes = (sum(map(lambda i: i == 1.0, scores)))
+    # present as %
+    print(number_of_successes)
+    file = open(filename, "a")
+    file.writelines("\nSuccesses: ")
+    file.writelines(str(number_of_successes))
+    file.close()
+
+
+bits = 5
+r_width = 40
+d_period = 200
+# ca_rule = 195
+runs = 100
+
+r = 2
+itr = 2
+for ca_rule in range(69, 256):
+    recordingExp(bits, r_width, d_period, ca_rule, runs, r, itr)
+
+
+# ca_rule = 60
+#
+# recordingExp(bits, r_width, d_period, ca_rule, runs, r, itr)
